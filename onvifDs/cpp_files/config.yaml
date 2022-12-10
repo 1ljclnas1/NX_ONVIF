@@ -1,0 +1,4 @@
+model: phone
+Auth:
+  account: admin
+  password: asd123456

@@ -1,0 +1,16 @@
+camera_auth:
+  default:
+      hostname: "0.0.0.0"
+      onvif_username: "admin"
+      onvif_passwd: "asd123456"
+      result_username: "admin"
+      result_passwd: "asd123456"
+      model: "../modules/phone/config_infer_primary.txt"
+
+  source0:
+      hostname: "192.168.1.80"
+      onvif_username: "admin"
+      onvif_passwd: "asd123456"
+      result_username: "admin"
+      result_passwd: "asd123456"
+      model: "../modules/dustbin/dustbin_infer.txt"

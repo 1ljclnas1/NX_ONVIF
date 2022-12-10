@@ -1,0 +1,474 @@
+soap.h中定义了在生成soap消息中所有需要用到的结构体，其结构如下：
+		|------>Http_Header*--->{char *method, *service_address, *http_version, *hostname, *content_type, *content_type;
+		|		        	{Http_Digest *http_digest;
+Message-------->|
+		|
+		|
+		|------>Http_Content*				{int *content_length;
+		|			{Xml_Info *----------->	{char *version;
+		|			{			{char *encoding;
+		|			{
+		|			{Xml_element *-------->	{char *ns;
+		|			{                     	{char *name;
+		|			{                     	{char *vlaue;
+		|			{                     	{Xmlns_ns *;
+		|			{                     	{Xmlns_value *;	
+		|			{                     	{Xml_element *brother;
+		|			{                     	{Xml_element *child;
+
+由于对于不同服务的请求消息的不同，但是其结构具有一定的规律性即遵循的是soap编码格式，此处的设计秉持灵活、随意组合的理念，
+有一定的冗余，但是冗余较少，且能灵活的组合成各种服务的消息，如无http头的probe或者有http头无鉴权的，有http头有鉴权的，
+而且对于http digest验证方式也留下了一个http digest的指针，防止以后出现这种需求。其具体用法将在介绍完整体结构、各结构体功能
+及用处后，详细说明。
+
+在开发过程中发现如果A结构体中有一个B结构体的指针，那么B的定义要在A之前因此Message的定义将在最后，（不会使用extern等关键字采用的这种比较笨的方法）
+首先是整体结构如上图所示，如果显示较乱请全屏。
+首先是Message结构体，各服务的装饰类的GenSoap函数通过Message来生成各自的请求消息，
+对于一个soap消息来说它分为两部分，一部分是HTTP头部信息，一个是HTTP内容信息，因此
+
+Message中定义了两个指针，一个指向HTTP头部，一个指向HTTP内容，
+
+首先说HTTP头部也就是Http_Header结构体，对于一个soap消息来说，它所需要的HTTP
+头部信息有传输方法是“POST”或者“GET”，服务所需要的服务地址如"/onvif/Media",HTTP协议版本，
+发向的主机的地址内容类型和内容长度，对于有HTTP Digest需求的服务来说此处也留下了一个Http_Digest结构体指针，
+其中并未定义任何内容需要的话请自行定义。content_type的内容在此次开发中都为“application/soap+xml; charset=utf-8”；
+如果有改变在使用时自行定义内容，此处并未写死，而是留下了一个char*指针。
+		-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-
+		|需要注意的是此处的content_length是一个char变量使用时需要注意|
+		-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-·-
+下面说Http_Content结构体，它是用来生成soap编码规则的xml文档信息的。
+第一个依然是被定义为char*指针的content_length（此处我没有想好要不要这个）暂定为需要的。
+定义了一个Xml_Info结构体的指针，这是用来填充xml版本和编码方式的如"1.0"，"utf-8"。
+定义了一个Xml_element结构体，用于生成所有xml标签的。
+
+		！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！
+		下面介绍Xml_element元素，这是能够实现整个消息结构的关键；
+		
+		此处的设计我要感谢踪家祥以及我的一位室友栾兆方的帮助
+		！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！
+
+
+Xml_element结构体介绍及使用方法：
+当使用ONVIF TEST TOOL工具获取到Probe消息，GetServices消息，GetScope消息，GetProfile消息，GetStreamUri消息的请求报文时，通过观察可以发现
+位于<?xml>标签下的每一个标签都具有以下相似的结构，对于结构中的内容来说有的标签实现了有的没有实现：
+		<Header>
+		<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+比如上面两个，HEADER标签只实现了name这也是每一个标签都会有的属性。而Envelope实现了一些其他的属性
+但是并不是所有相同名字的标签，都会实现相同的内容，比如：
+		<Body> Probe中的
+		<s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+		GetScopes中的
+在Probe中的Body只实现了name，而GetScopes中的却实现了一些其他的属性。
+而标签中应该有什么这是在ONVIF官网中的WSDL文件中规定的，每一种服务都有对应的WSDL文件规定了他所应该实现的。
+
+对于上述提到的几个服务中，通过对比观察，划分了五个属性以及两个结构指针。对于结构指针我将在介绍完五个属性之后，进行说明。
+对于五个属性的顺序我想按照编写的顺序进行说明：
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+以上面的一个envelope标签为例：
+第一个是“s”这是这个标签的命名空间    在结构体中我将其定义为char *ns；
+第二个是“Envelope”这个是标签的名称  在结构体中我将其定义为char *name；
+第三个是在xmlns后面的"s" 看到这里可能会有疑问这个属性的值不应该跟第一个是相同的么？为什么要在定义一次？
+这个问题我将在后面的结构指针的说明中进行解释，当然这个也是命名空间，但却是在xmlns之后的，在结构体中我将其命名为"xmlns_ns"
+第四个是"http://www.w3.org/2003/05/soap-envelope"  这是这个标签中xmlns属性应该等于的值，在结构体中我将其命名为"xmlns_value"
+观察源代码发现还有一个value属性，这个值之所以存在是因为在整个xml消息中存在两种标签，一种是叶子标签一种是非叶子标签，
+所谓叶子标签就是没有子标签的标签如：
+		<GetScopes xmlns="http://www.onvif.org/ver10/device/wsdl" />
+		<Stream xmlns="http://www.onvif.org/ver10/schema">RTP-Unicast</Stream>
+这两个标签都是叶子标签但是GetScopes没有值而Stream属性有值也就是RTP-Unicast这个值就是value的值
+
+下面介绍两个结构节点
+在介绍结构节点之前简单说一下xml的结构：
+		<Header>
+        			<element1>
+                			<element2></element2>
+				<element3></element3>
+        			</element1>
+       			<element4>
+        			</element4>
+			<element5>
+			</element5>
+		</Header>
+在header标签下可以有多个同级的子标签而在一级子标签element1标签下也会有0个或一个或多个子标签，
+因此一个标签的兄弟标签指向他的同级的下一个标签也就是说element1的brother指向的是element4，
+而element4标签的brother才指向element5；
+同样的element1标签的child标签指向element2标签，而element3标签则被element2的brother指针所指向
+
+下面来介绍两个被用在Xml_element结构体中的两个结构体
+Xmlns_ns和Xmlns_value
+先举一个例子：
+		<s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+首先回答一下之前遗留下来的一个关于为什么有了ns还要定义一个xmlns的问题，如上所示，在某些标签中，不同是否是相同名字的标签其前后的ns，xmlns_ns可能是不一致的
+
+继续介绍，可以发现xmlns有两个，首先需要声明的是上面这个Body是我节选自GetStreamUri消息中的，其实任何一个需要鉴权的消息都是这样的Body，这是因为
+在ONVIF规范中提供了两种鉴权方式一种是Digest，一种是WS-Security，如果你是用过gsoap工具就会想起来在生成需要鉴权的代码的时候，在onvif.h中需要加入一行"#import "wsse.h""
+一种xmlns对应一种加密方式
+下面继续说明，由于可能存在多个xmlns那么他们其中的特点就是xmlns_ns与xmlns_value都不一致
+因此我在说明这两个属性的时候使用了两个结构体Xmlns_ns和Xmlns_value
+下面说明其中一个，另一个也是相同的道理
+由于会存在多个Xmlns_ns因此此处定义一个xmlns_ns的链表由一个指向另一个
+这个指针就是Xmlns_ns结构体当中的next指针。而value的值则应该是如上述中的"xsi"和"xsd"等
+
+其实在这其中应该还有一个规律，但是我的代码并没有体现出来，那就是xmlns_ns和xmlns_value应该是成对出现的在代码中我并没有体现这种关联性，
+这有可能导致在其后的使用过程中出现一些不必要的失误，这些规律的实现应该有结构体的开发者来实现，而不应该将这个问题留给客户，但是我没有想到一个好的解决方法。
+如果谁在阅读这段注释的过程中发现了这个问题的解决方法，请将其修改。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+我好懒，我不想改代码了，因为我已经将这个结构体中用在Probe消息中的改起来好麻烦哈哈哈，不会有人发现吧我都这么靠后了。芜湖
+注释长一些这样就基本不会被发现了哈哈哈哈，小机灵鬼-------------------------------------------------------------------------蔡柯迪。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
