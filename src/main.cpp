@@ -36,6 +36,9 @@
 #define MAX_INSTANCES 128
 #define MAX_DISPLAY_LEN 64
 
+
+int source_count = 0;
+
 AppCtx *appCtx[MAX_INSTANCES];
 
 GMainLoop *loop = NULL;
@@ -1038,8 +1041,8 @@ int create_pipelines(std::vector<std::string> addrs, const ConfigParser& config_
         caps = gst_caps_from_string ("video/x-raw(memory:NVMM), format=I420");
         encoder = gst_element_factory_make ("nvv4l2h264enc", "encoder");
         guint profile = 0;
-        guint bitrate = 1000000;
-        guint iframeinterval = 60;
+        guint bitrate = 4000000;
+        guint iframeinterval = 30;
         codecparser = gst_element_factory_make ("h264parse", "h264-parser2");
         rtppay = gst_element_factory_make ("rtph264pay", "rtppay");
         sink = gst_element_factory_make ("udpsink", "udpsink");
@@ -1073,7 +1076,7 @@ int create_pipelines(std::vector<std::string> addrs, const ConfigParser& config_
         g_object_set (G_OBJECT (encoder), "insert-sps-pps", 1, NULL);
         g_object_set (G_OBJECT (encoder), "bufapi-version", 1, NULL);
         g_object_set (G_OBJECT (sink), "host", "224.224.255.255", "port",
-                      5400, "async", FALSE, "sync", 0, NULL);
+                      5400+20*source_count, "async", FALSE, "sync", 0, NULL);
 
         if (!pgie) {
             g_printerr ("pgie could not be created. Exiting.\n");
@@ -1157,7 +1160,7 @@ int create_pipelines(std::vector<std::string> addrs, const ConfigParser& config_
                                osd_sink_pad_buffer_probe, (gpointer)addrs[k].c_str(), NULL);
 
         ret = TRUE;
-        ret = start_rtsp_streaming (8554 + 20*k, 5400+20*k, 0, addrs[k]);
+        ret = start_rtsp_streaming (8554 + 20*source_count, 5400+20*source_count, 0, addrs[k]);
         if (ret != TRUE) {
             g_print ("%s: start_rtsp_straming function failed\n", __func__);
         }
@@ -1165,6 +1168,8 @@ int create_pipelines(std::vector<std::string> addrs, const ConfigParser& config_
         g_print ("Now playing...\n");
         gst_element_set_state (pipeline->pipeline, GST_STATE_PLAYING);
         pipelineList.push_back(pipeline);
+
+        source_count++;
 
 
     }
